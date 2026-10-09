@@ -47,7 +47,7 @@ body.rep main,body.rep header{display:none}body.rep #report{display:block}body.r
 <main id="form"></main>
 <div id="report"></div>
 
-<script src="jspdf.min.js"></script>
+<script src="jspdf.min.js?v=2"></script>
 <script>
 /* ======= EDITE AQUI: campos e nome da empresa ======= */
 const EMPRESA = "INSMONT";            // aparece no topo do relatório
@@ -152,6 +152,8 @@ function buildPDF(){
   y+=6});
  return doc.output("blob")}
 
+const loadLib=()=>new Promise(res=>{if(window.jspdf)return res(true);
+ const sc=document.createElement("script");sc.src="jspdf.min.js?r="+Date.now();sc.onload=()=>res(!!window.jspdf);sc.onerror=()=>res(false);document.head.appendChild(sc)});
 $("#pdf").onclick=async()=>{
  const btn=$("#pdf");
  if(pdfFile){ /* segundo toque: compartilhar / salvar */
@@ -159,8 +161,9 @@ $("#pdf").onclick=async()=>{
   catch(e){if(e.name=="AbortError")return}
   const u=URL.createObjectURL(pdfFile),a=document.createElement("a");a.href=u;a.download=pdfFile.name;document.body.appendChild(a);a.click();a.remove();
   setTimeout(()=>URL.revokeObjectURL(u),60000);return}
- if(!window.jspdf){alert("A biblioteca de PDF não carregou. Conecte à internet, abra o app uma vez e tente de novo.");return}
- btn.textContent="Gerando…";btn.disabled=true;
+ btn.textContent="Carregando…";btn.disabled=true;
+ if(!(await loadLib())){alert("A biblioteca de PDF não carregou. Conecte à internet e tente de novo. Se continuar, limpe os dados do site nos Ajustes do Safari.");btn.textContent="Gerar PDF";btn.disabled=false;return}
+ btn.textContent="Gerando…";
  try{await new Promise(r=>setTimeout(r,50));const blob=buildPDF();pdfFile=new File([blob],fname(),{type:"application/pdf"});btn.textContent="Compartilhar / Salvar PDF"}
  catch(e){alert("Erro ao gerar o PDF: "+e.message);btn.textContent="Gerar PDF"}
  btn.disabled=false};
