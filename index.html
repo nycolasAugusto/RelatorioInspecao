@@ -39,22 +39,18 @@ details.item summary{padding:14px;font-weight:600;color:var(--az);cursor:pointer
 .pg img{width:100%;height:190px;object-fit:cover;border-radius:4px;break-inside:avoid}
 .bar{display:none;gap:8px;padding:12px;background:var(--bg);position:sticky;top:0;z-index:6}
 body.rep main,body.rep header{display:none}body.rep #report{display:block}body.rep .bar{display:flex}
-@media print{
- body{background:#fff}header,.bar,main{display:none!important}#report{display:block!important;padding:0}
- @page{size:A4;margin:12mm}
- *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-}
 </style>
 </head>
 <body>
 <header><div><b>Inspeção Elétrica</b><br><small>Relatório técnico</small></div><span id="save">salvo</span></header>
-<div class="bar"><button class="btn alt" id="back" style="margin:0">Voltar</button><button class="btn" id="pdf" style="margin:0">Salvar PDF</button></div>
+<div class="bar"><button class="btn alt" id="back" style="margin:0">Voltar</button><button class="btn" id="pdf" style="margin:0">Gerar PDF</button></div>
 <main id="form"></main>
 <div id="report"></div>
 
+<script src="jspdf.min.js"></script>
 <script>
 /* ======= EDITE AQUI: campos e nome da empresa ======= */
-const EMPRESA = "Sua Empresa";            // aparece no topo do relatório
+const EMPRESA = "INSMONT";            // aparece no topo do relatório
 const HEAD = [
   ["eqp","Equipamento / Painel"],["rel","Nº do relatório"],["cli","Cliente / Fábrica"],
   ["loc","Local / Área"],["dat","Data","date"],["ins","Inspetor"],["art","ART"]
@@ -115,7 +111,7 @@ function shrink(file,m=1100){return new Promise(res=>{
  im.src=u})}
 async function addP(fl){const m=S.items[tgt];for(const f of fl)m.p.push(await shrink(f));keep()}
 
-function showReport(){
+function showReport(){pdfFile=null;$("#pdf").textContent="Gerar PDF";
  const fmt=(k,v)=>k=="dat"&&v?v.split("-").reverse().join("/"):esc(v)||"—";
  const first=S.items[0].h;
  $("#report").innerHTML=`
@@ -125,10 +121,49 @@ function showReport(){
   ${m.p.length?`<div class="pg">${m.p.map(s=>`<img src="${s}">`).join("")}</div>`:""}</div>`).join("")}`;
  document.body.classList.add("rep");scrollTo(0,0);
 }
-$("#back").onclick=()=>{document.body.classList.remove("rep");scrollTo(0,0)};
-$("#pdf").onclick=()=>{
- const h=S.items[0].h,n=(h.rel||"relatorio")+(h.dat?"_"+h.dat:"");const old=document.title;
- document.title=n.replace(/[^\w-]+/g,"_");print();setTimeout(()=>document.title=old,1500)};
+$("#back").onclick=()=>{pdfFile=null;$("#pdf").textContent="Gerar PDF";document.body.classList.remove("rep");scrollTo(0,0)};
+/* ---------- PDF de verdade (funciona no iPhone) ---------- */
+let pdfFile=null;
+const fname=()=>{const h=S.items[0].h;return((h.rel||"relatorio")+(h.dat?"_"+h.dat:"")).replace(/[^\w-]+/g,"_")+".pdf"};
+function buildPDF(){
+ const {jsPDF}=window.jspdf,doc=new jsPDF({unit:"mm",format:"a4"}),M=12,W=210-2*M;let y=M;
+ const need=h=>{if(y+h>285){doc.addPage();y=M}};
+ const fmt=(k,v)=>k=="dat"&&v?v.split("-").reverse().join("/"):(v||"—");
+ doc.setTextColor(29,53,87);doc.setFont("helvetica","bold");doc.setFontSize(15);doc.text(EMPRESA,M,y+5);
+ doc.setFontSize(10);doc.text("RELATÓRIO TÉCNICO DE INSPEÇÃO ELÉTRICA",210-M,y+3,{align:"right"});
+ doc.setFont("helvetica","normal");doc.setTextColor(90);doc.setFontSize(9);doc.text(S.items[0].h.rel||"",210-M,y+8,{align:"right"});
+ y+=11;doc.setDrawColor(29,53,87);doc.setLineWidth(.8);doc.line(M,y,210-M,y);y+=6;
+ S.items.forEach((m,i)=>{
+  const rows=Math.ceil((HEAD.length-1)/2);need(10+rows*10+(m.p.length?70:0));
+  doc.setDrawColor(207,214,224);doc.setLineWidth(.4);if(i)doc.line(M,y-2,210-M,y-2);
+  doc.setFont("helvetica","bold");doc.setFontSize(12);doc.setTextColor(29,53,87);doc.text(m.h.eqp||"Registro "+(i+1),M,y+4);y+=9;
+  HEAD.filter(([k])=>k!="eqp").forEach(([k,n],j)=>{
+   const x=M+(j%2)*(W/2);
+   doc.setFont("helvetica","normal");doc.setFontSize(7);doc.setTextColor(110);doc.text(n,x,y+2);
+   doc.setFontSize(10);doc.setTextColor(20);doc.text(String(fmt(k,m.h[k])),x,y+6.5);
+   if(j%2)y+=10});
+  if((HEAD.length-1)%2)y+=10;
+  y+=1;const bw=(W-4)/2,bh=68;
+  m.p.forEach((src,j)=>{
+   if(j%2==0)need(bh+4);
+   const x=M+(j%2)*(bw+4),p=doc.getImageProperties(src),r=Math.min(bw/p.width,bh/p.height),w=p.width*r,h=p.height*r;
+   doc.addImage(src,"JPEG",x+(bw-w)/2,y+(bh-h)/2,w,h,undefined,"FAST");
+   if(j%2||j==m.p.length-1)y+=bh+4});
+  y+=6});
+ return doc.output("blob")}
+
+$("#pdf").onclick=async()=>{
+ const btn=$("#pdf");
+ if(pdfFile){ /* segundo toque: compartilhar / salvar */
+  try{if(navigator.canShare&&navigator.canShare({files:[pdfFile]})){await navigator.share({files:[pdfFile],title:pdfFile.name});return}}
+  catch(e){if(e.name=="AbortError")return}
+  const u=URL.createObjectURL(pdfFile),a=document.createElement("a");a.href=u;a.download=pdfFile.name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u),60000);return}
+ if(!window.jspdf){alert("A biblioteca de PDF não carregou. Conecte à internet, abra o app uma vez e tente de novo.");return}
+ btn.textContent="Gerando…";btn.disabled=true;
+ try{await new Promise(r=>setTimeout(r,50));const blob=buildPDF();pdfFile=new File([blob],fname(),{type:"application/pdf"});btn.textContent="Compartilhar / Salvar PDF"}
+ catch(e){alert("Erro ao gerar o PDF: "+e.message);btn.textContent="Gerar PDF"}
+ btn.disabled=false};
 
 (async()=>{const d=await dbGet();
  if(d&&d.items&&d.items.length&&d.items[0].h)S=d;
